@@ -34,15 +34,15 @@ object AdaptScreenUtils {
   }
 
   fun getAdaptResult(): Resources {
-    return if (Utils.app!!.resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT) {
-      adaptWidth(Utils.app!!.resources, 360)
+    return if (Utils.app.resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT) {
+      adaptWidth(Utils.app.resources, 360)
     } else {
-      adaptHeight(Utils.app!!.resources, 640)
+      adaptHeight(Utils.app.resources, 640)
     }
   }
 
   private fun setAppDmXdpi(xdpi: Float) {
-    Utils.app!!.resources.displayMetrics.xdpi = xdpi
+    Utils.app.resources.displayMetrics.xdpi = xdpi
   }
 
   private fun getDisplayMetrics(resources: Resources): DisplayMetrics {

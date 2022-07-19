@@ -13,7 +13,7 @@ import kotlinx.coroutines.withContext
 object DataRepository {
   private const val DATABASE_NAME = "NOTE_DB.db"
   private val dataBase: NoteDataBase = Room.databaseBuilder(
-    Utils.app!!.applicationContext,
+    Utils.app,
     NoteDataBase::class.java, DATABASE_NAME
   ).build()
 

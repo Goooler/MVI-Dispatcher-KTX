@@ -7,10 +7,10 @@ import android.widget.Toast
  */
 object ToastUtils {
   fun showLongToast(text: String?) {
-    Toast.makeText(Utils.app?.applicationContext, text, Toast.LENGTH_LONG).show()
+    Toast.makeText(Utils.app, text, Toast.LENGTH_LONG).show()
   }
 
   fun showShortToast(text: String?) {
-    Toast.makeText(Utils.app?.applicationContext, text, Toast.LENGTH_SHORT).show()
+    Toast.makeText(Utils.app, text, Toast.LENGTH_SHORT).show()
   }
 }
