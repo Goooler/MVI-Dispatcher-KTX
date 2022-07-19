@@ -7,10 +7,17 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.PointF
 import android.util.AttributeSet
-import android.view.*
+import android.view.MotionEvent
+import android.view.VelocityTracker
+import android.view.View
+import android.view.ViewConfiguration
+import android.view.ViewGroup
 import android.view.animation.AccelerateInterpolator
 import android.view.animation.OvershootInterpolator
+import androidx.core.view.children
 import com.kunminx.architecture.R
+import kotlin.math.abs
+import kotlin.math.max
 
 /**
  * Created by zhangxutong .
@@ -32,12 +39,20 @@ class SwipeMenuLayout @JvmOverloads constructor(
   private val firstP = PointF()
   private var isUserSwiped = false
   private var velocityTracker: VelocityTracker? = null
+  private var expandAnim: ValueAnimator? = null
+  private var closeAnim: ValueAnimator? = null
+  private var isExpand = false
+  private var iosInterceptFlag = false
+
   var isSwipeEnable = false
   var isIos = false
     private set
-  private var iosInterceptFlag = false
   var isLeftSwipe = false
     private set
+
+  init {
+    init(context, attrs, defStyleAttr)
+  }
 
   fun setIos(ios: Boolean): SwipeMenuLayout {
     isIos = ios
@@ -55,17 +70,20 @@ class SwipeMenuLayout @JvmOverloads constructor(
     isSwipeEnable = true
     isIos = true
     isLeftSwipe = true
-    val ta =
-      context.theme.obtainStyledAttributes(attrs, R.styleable.SwipeMenuLayout, defStyleAttr, 0)
-    val count = ta.indexCount
-    for (i in 0 until count) {
-      val attr = ta.getIndex(i)
-      if (attr == R.styleable.SwipeMenuLayout_swipeEnable) {
-        isSwipeEnable = ta.getBoolean(attr, true)
-      } else if (attr == R.styleable.SwipeMenuLayout_ios) {
-        isIos = ta.getBoolean(attr, true)
-      } else if (attr == R.styleable.SwipeMenuLayout_leftSwipe) {
-        isLeftSwipe = ta.getBoolean(attr, true)
+    val ta = context.theme.obtainStyledAttributes(
+      attrs, R.styleable.SwipeMenuLayout, defStyleAttr, 0
+    )
+    for (i in 0 until ta.indexCount) {
+      when (val attr = ta.getIndex(i)) {
+        R.styleable.SwipeMenuLayout_swipeEnable -> {
+          isSwipeEnable = ta.getBoolean(attr, true)
+        }
+        R.styleable.SwipeMenuLayout_ios -> {
+          isIos = ta.getBoolean(attr, true)
+        }
+        R.styleable.SwipeMenuLayout_leftSwipe -> {
+          isLeftSwipe = ta.getBoolean(attr, true)
+        }
       }
     }
     ta.recycle()
@@ -77,16 +95,14 @@ class SwipeMenuLayout @JvmOverloads constructor(
     rightMenuWidths = 0
     var height = 0
     var contentWidth = 0
-    val childCount = childCount
     val measureMatchParentChildren = MeasureSpec.getMode(heightMeasureSpec) != MeasureSpec.EXACTLY
     var isNeedMeasureChildHeight = false
-    for (i in 0 until childCount) {
-      val childView = getChildAt(i)
+    children.forEachIndexed { i, childView ->
       childView.isClickable = true
       if (childView.visibility != GONE) {
         measureChild(childView, widthMeasureSpec, heightMeasureSpec)
         val lp = childView.layoutParams as MarginLayoutParams
-        height = Math.max(height, childView.measuredHeight)
+        height = max(height, childView.measuredHeight)
         if (measureMatchParentChildren && lp.height == LayoutParams.MATCH_PARENT) {
           isNeedMeasureChildHeight = true
         }
@@ -104,7 +120,7 @@ class SwipeMenuLayout @JvmOverloads constructor(
     )
     limit = rightMenuWidths * 4 / 10
     if (isNeedMeasureChildHeight) {
-      forceUniformHeight(childCount, widthMeasureSpec)
+      forceUniformHeight(widthMeasureSpec)
     }
   }
 
@@ -112,13 +128,9 @@ class SwipeMenuLayout @JvmOverloads constructor(
     return MarginLayoutParams(context, attrs)
   }
 
-  private fun forceUniformHeight(count: Int, widthMeasureSpec: Int) {
-    val uniformMeasureSpec = MeasureSpec.makeMeasureSpec(
-      measuredHeight,
-      MeasureSpec.EXACTLY
-    )
-    for (i in 0 until count) {
-      val child = getChildAt(i)
+  private fun forceUniformHeight(widthMeasureSpec: Int) {
+    val uniformMeasureSpec = MeasureSpec.makeMeasureSpec(measuredHeight, MeasureSpec.EXACTLY)
+    children.forEach { child ->
       if (child.visibility != GONE) {
         val lp = child.layoutParams as MarginLayoutParams
         if (lp.height == LayoutParams.MATCH_PARENT) {
@@ -132,11 +144,10 @@ class SwipeMenuLayout @JvmOverloads constructor(
   }
 
   override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
-    val childCount = childCount
     var left = paddingLeft
     var right = paddingLeft
-    for (i in 0 until childCount) {
-      val childView = getChildAt(i)
+
+    children.forEachIndexed { i, childView ->
       if (childView.visibility != GONE) {
         if (i == 0) {
           childView.layout(
@@ -145,7 +156,7 @@ class SwipeMenuLayout @JvmOverloads constructor(
             left + childView.measuredWidth,
             paddingTop + childView.measuredHeight
           )
-          left = left + childView.measuredWidth
+          left += childView.measuredWidth
         } else {
           if (isLeftSwipe) {
             childView.layout(
@@ -154,7 +165,7 @@ class SwipeMenuLayout @JvmOverloads constructor(
               left + childView.measuredWidth,
               paddingTop + childView.measuredHeight
             )
-            left = left + childView.measuredWidth
+            left += childView.measuredWidth
           } else {
             childView.layout(
               right - childView.measuredWidth,
@@ -162,7 +173,7 @@ class SwipeMenuLayout @JvmOverloads constructor(
               right,
               paddingTop + childView.measuredHeight
             )
-            right = right - childView.measuredWidth
+            right -= childView.measuredWidth
           }
         }
       }
@@ -193,10 +204,10 @@ class SwipeMenuLayout @JvmOverloads constructor(
         MotionEvent.ACTION_MOVE -> {
           if (!iosInterceptFlag) {
             val gap = lastP.x - ev.rawX
-            if (Math.abs(gap) > 10 || Math.abs(scrollX) > 10) {
+            if (abs(gap) > 10 || abs(scrollX) > 10) {
               parent.requestDisallowInterceptTouchEvent(true)
             }
-            if (Math.abs(gap) > scaleTouchSlop) isUnMoved = false
+            if (abs(gap) > scaleTouchSlop) isUnMoved = false
             scrollBy(gap.toInt(), 0)
             if (isLeftSwipe) {
               if (scrollX < 0) scrollTo(0, 0)
@@ -209,20 +220,20 @@ class SwipeMenuLayout @JvmOverloads constructor(
           }
         }
         MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-          if (Math.abs(ev.rawX - firstP.x) > scaleTouchSlop) {
+          if (abs(ev.rawX - firstP.x) > scaleTouchSlop) {
             isUserSwiped = true
           }
           if (!iosInterceptFlag) {
             verTracker!!.computeCurrentVelocity(1000, maxVelocity.toFloat())
             val velocityX = verTracker.getXVelocity(pointerId)
-            if (Math.abs(velocityX) > 1000) {
+            if (abs(velocityX) > 1000) {
               if (velocityX < -1000) {
                 if (isLeftSwipe) smoothExpand() else smoothClose()
               } else {
                 if (isLeftSwipe) smoothClose() else smoothExpand()
               }
             } else {
-              if (Math.abs(scrollX) > limit) smoothExpand() else smoothClose()
+              if (abs(scrollX) > limit) smoothExpand() else smoothClose()
             }
           }
           releaseVelocityTracker()
@@ -237,7 +248,7 @@ class SwipeMenuLayout @JvmOverloads constructor(
   override fun onInterceptTouchEvent(ev: MotionEvent): Boolean {
     if (isSwipeEnable) {
       when (ev.action) {
-        MotionEvent.ACTION_MOVE -> if (Math.abs(ev.rawX - firstP.x) > scaleTouchSlop) return true
+        MotionEvent.ACTION_MOVE -> if (abs(ev.rawX - firstP.x) > scaleTouchSlop) return true
         MotionEvent.ACTION_UP -> {
           if (isLeftSwipe) {
             if (scrollX > scaleTouchSlop) {
@@ -264,68 +275,62 @@ class SwipeMenuLayout @JvmOverloads constructor(
     return super.onInterceptTouchEvent(ev)
   }
 
-  private var expandAnim: ValueAnimator? = null
-  private var closeAnim: ValueAnimator? = null
-  private var isExpand = false
   fun smoothExpand() {
     viewCache = this@SwipeMenuLayout
-    if (null != contentView) {
-      contentView!!.isLongClickable = false
-    }
+    contentView?.isLongClickable = false
     cancelAnim()
     expandAnim =
       ValueAnimator.ofInt(scrollX, if (isLeftSwipe) rightMenuWidths else -rightMenuWidths)
-    with(expandAnim) {
-      this?.addUpdateListener { animation: ValueAnimator ->
+    expandAnim?.run {
+      addUpdateListener { animation: ValueAnimator ->
         scrollTo((animation.animatedValue as Int), 0)
       }
-      this?.interpolator = OvershootInterpolator()
-      this?.addListener(object : AnimatorListenerAdapter() {
+      interpolator = OvershootInterpolator()
+      addListener(object : AnimatorListenerAdapter() {
         override fun onAnimationEnd(animation: Animator) {
           isExpand = true
         }
       })
-      this?.setDuration(300)?.start()
+      setDuration(300).start()
     }
   }
 
   private fun cancelAnim() {
-    if (closeAnim != null && closeAnim!!.isRunning) closeAnim!!.cancel()
-    if (expandAnim != null && expandAnim!!.isRunning) expandAnim!!.cancel()
+    if (closeAnim?.isRunning == true) closeAnim?.cancel()
+    if (expandAnim?.isRunning == true) expandAnim?.cancel()
   }
 
   private fun smoothClose() {
     viewCache = null
-    if (null != contentView) {
-      contentView!!.isLongClickable = true
-    }
+    contentView?.isLongClickable = true
     cancelAnim()
     closeAnim = ValueAnimator.ofInt(scrollX, 0)
-    with(closeAnim) {
-      this?.addUpdateListener { animation: ValueAnimator ->
+    closeAnim?.run {
+      addUpdateListener { animation: ValueAnimator ->
         scrollTo((animation.animatedValue as Int), 0)
       }
-      this?.interpolator = AccelerateInterpolator()
-      this?.addListener(object : AnimatorListenerAdapter() {
+      interpolator = AccelerateInterpolator()
+      addListener(object : AnimatorListenerAdapter() {
         override fun onAnimationEnd(animation: Animator) {
           isExpand = false
         }
       })
-      this?.setDuration(300)?.start()
+      setDuration(300).start()
     }
   }
 
   private fun acquireVelocityTracker(event: MotionEvent) {
-    if (null == velocityTracker) velocityTracker = VelocityTracker.obtain()
-    velocityTracker!!.addMovement(event)
+    if (velocityTracker == null) velocityTracker = VelocityTracker.obtain().apply {
+      addMovement(event)
+    }
   }
 
   private fun releaseVelocityTracker() {
-    if (null != velocityTracker) {
-      velocityTracker!!.clear()
-      velocityTracker!!.recycle()
-      velocityTracker = null
+    velocityTracker?.let {
+      it.clear()
+      it.recycle()
     }
+    velocityTracker = null
   }
 
   override fun onDetachedFromWindow() {
@@ -337,7 +342,7 @@ class SwipeMenuLayout @JvmOverloads constructor(
   }
 
   override fun performLongClick(): Boolean {
-    return if (Math.abs(scrollX) > scaleTouchSlop) {
+    return if (abs(scrollX) > scaleTouchSlop) {
       false
     } else super.performLongClick()
   }
@@ -357,9 +362,5 @@ class SwipeMenuLayout @JvmOverloads constructor(
     var viewCache: SwipeMenuLayout? = null
       private set
     private var isTouching = false
-  }
-
-  init {
-    init(context, attrs, defStyleAttr)
   }
 }
