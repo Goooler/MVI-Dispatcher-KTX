@@ -16,8 +16,9 @@ import java.lang.reflect.Field
  */
 object AdaptScreenUtils {
   private var isInitMiui = false
-  private var mTmpMetricsField: Field? = null
-  fun adaptWidth(resources: Resources, designWidth: Int): Resources {
+  private lateinit var mTmpMetricsField: Field
+
+  private fun adaptWidth(resources: Resources, designWidth: Int): Resources {
     val dm = getDisplayMetrics(resources)
     dm.xdpi = dm.widthPixels * 72f / designWidth
     val newXdpi = dm.xdpi
@@ -25,7 +26,7 @@ object AdaptScreenUtils {
     return resources
   }
 
-  fun adaptHeight(resources: Resources, designHeight: Int): Resources {
+  private fun adaptHeight(resources: Resources, designHeight: Int): Resources {
     val dm = getDisplayMetrics(resources)
     dm.xdpi = dm.heightPixels * 72f / designHeight
     val newXdpi = dm.xdpi
@@ -56,8 +57,8 @@ object AdaptScreenUtils {
       if ("MiuiResources" == simpleName || "XResources" == simpleName) {
         try {
           mTmpMetricsField = Resources::class.java.getDeclaredField("mTmpMetrics")
-          mTmpMetricsField!!.setAccessible(true)
-          ret = mTmpMetricsField!!.get(resources) as DisplayMetrics
+          mTmpMetricsField.isAccessible = true
+          ret = mTmpMetricsField.get(resources) as DisplayMetrics
         } catch (e: Exception) {
           Log.e("AdaptScreenUtils", "no field of mTmpMetrics in resources.")
         }
@@ -65,12 +66,6 @@ object AdaptScreenUtils {
       isInitMiui = true
       return ret
     }
-    return if (mTmpMetricsField == null) {
-      null
-    } else try {
-      mTmpMetricsField!![resources] as DisplayMetrics
-    } catch (e: Exception) {
-      null
-    }
+    return runCatching { mTmpMetricsField[resources] as DisplayMetrics }.getOrNull()
   }
 }
